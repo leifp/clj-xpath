@@ -2,12 +2,13 @@
   (:require
    [clojure.string :as str-utils])
   (:import
-   [java.io                     InputStream InputStreamReader StringReader File IOException ByteArrayInputStream]
+   [java.io                     InputStream InputStreamReader StringReader
+                                File IOException ByteArrayInputStream]
    [org.xml.sax                 InputSource SAXException]
    [javax.xml.transform         Source]
    [javax.xml.transform.stream  StreamSource]
    [javax.xml.validation        SchemaFactory]
-   [org.w3c.dom                 Document Node]
+   [org.w3c.dom                 Document Element NamedNodeMap Node NodeList]
    [javax.xml.parsers           DocumentBuilderFactory]
    [javax.xml.xpath             XPathFactory XPathConstants XPathExpression])
   (:gen-class))
@@ -30,18 +31,32 @@ See: format"
   [fmt & args]
   (.println System/err (apply format fmt args)))
 
+;;TODO extend clojure.core protocols onto Node Maps/Lists
 (defn node-list->seq
   "Convert a org.w3c.dom.NodeList into a clojure sequence."
-  [node-list]
+  [^NodeList node-list]
   (loop [length (.getLength node-list)
          idx    0
          res    []]
-                                        ;(logf "node-list: idx:%s node-list=%s length=%s" idx node-list length)
+    ;;(logf "node-list: idx:%s node-list=%s length=%s" idx node-list length)
     (if (>= idx length)
       (reverse res)
       (recur length
              (inc idx)
              (cons (.item node-list idx) res)))))
+
+(defn node-map->seq
+  "Convert a org.w3c.dom.NamedNodeMap into a clojure sequence."
+  [^NamedNodeMap node-map]
+  (loop [length (.getLength node-map)
+         idx    0
+         res    []]
+    ;;(logf "node-list: idx:%s node-list=%s length=%s" idx node-list length)
+    (if (>= idx length)
+      (reverse res)
+      (recur length
+             (inc idx)
+             (cons (.item node-map idx) res)))))
 
 (def ^:dynamic *validation* false)
 
@@ -83,10 +98,10 @@ See: format"
 
 (defn attrs
   "Extract the attributes from the node."
-  [nodeattrs]
-                                        ;(logf "attrs: nodeattrs=%s attrs=%s" nodeattrs (.getAttributes nodeattrs))
+  [^Node nodeattrs]
+  ;;(logf "attrs: nodeattrs=%s attrs=%s" nodeattrs (.getAttributes nodeattrs))
   (if-let [the-attrs (.getAttributes nodeattrs)]
-    (loop [[node & nodes] (node-list->seq (.getAttributes nodeattrs))
+    (loop [[^Node node & nodes] (node-map->seq (.getAttributes nodeattrs))
            res {}]
       (if node
         (recur nodes (assoc res (keyword (.getNodeName node)) (.getTextContent node)))
@@ -112,9 +127,10 @@ See: format"
     :children  a lazy sequence of the node's children.
 "
   [#^Node node]
-  (let [lazy-children (fn [n] (delay
-                                (map node->map
-                                     (node-list->seq (.getChildNodes n)))))
+  (let [lazy-children (fn [^Node n]
+                        (delay
+                         (map node->map
+                              (node-list->seq (.getChildNodes n)))))
         m  {:node node
             :tag   (node-name node)
             :attrs (attrs node)
@@ -142,7 +158,7 @@ See: format"
 See xml->doc, and xp:compile."
   (fn [xp xml-thing] (class xml-thing)))
 
-(defmethod $x String [xp xml]
+(defmethod $x String [xp ^String xml]
   ($x xp (xml->doc (.getBytes xml *default-encoding*))))
 
 (defmethod $x (Class/forName "[B") [xp bytes]
@@ -151,7 +167,7 @@ See xml->doc, and xp:compile."
 (defmethod $x InputStream [xp istr]
   ($x xp (xml->doc istr)))
 
-(defmethod $x java.util.Map                   [xp xml] ($x xp (:node xml)))
+(defmethod $x java.util.Map [xp xml] ($x xp (:node xml)))
 
 ;; assume a Document (or api compatible)
 (defmethod $x :default [xp-expression doc]
@@ -378,7 +394,7 @@ See xml->doc, and xp:compile."
 (defn xmlnsmap-from-document
   "Extract a map of XML Namespace prefix to URI (and URI to prefix) recursively from the entire document."
   [xml]
-  (let [node   (xml->doc xml)]
+  (let [node (xml->doc xml)]
     (reduce
      (fn merge-nsmaps [m node]
        (merge
@@ -439,21 +455,23 @@ See xml->doc, and xp:compile."
 
 (defmulti abs-path*
   "Determine the absolute path to node."
-  (fn [node] (.getNodeType node)))
+  (fn [^Node node] (.getNodeType node)))
 
 (defn- walk-back
   "Walk up the document to the root node, tracing the path all the way back up."
-  [node tail]
+  [^Node node tail]
   (if-let [anc (.getParentNode node)]
     (str (abs-path* anc) "/" tail)
     tail))
 
-(defmethod abs-path* Node/ELEMENT_NODE [node]
+(defmethod abs-path* Node/ELEMENT_NODE [^Element node]
   (let [name (.getTagName node)
         posn (count (->> node
-                         (iterate #(.getPreviousSibling %))
+                         (iterate (fn [^Node n] (.getPreviousSibling n)))
                          (take-while boolean)
-                         (filter #(and (= Node/ELEMENT_NODE (.getNodeType %)) (= name (.getTagName %))))))
+                         (filter (fn [^Node n]
+                                   (and (= Node/ELEMENT_NODE (.getNodeType n))
+                                        (= name (.getTagName ^Element n)))))))
         step (str name "[" posn "]")]
     (walk-back node step)))
 
@@ -465,12 +483,12 @@ See xml->doc, and xp:compile."
     Node/COMMENT_NODE                "comment"
     Node/PROCESSING_INSTRUCTION_NODE "processing-instruction"} nt))
 
-(defmethod abs-path* :default [node]
+(defmethod abs-path* :default [^Node node]
   (let [nt   (.getNodeType node)
         posn (count (->> node
-                         (iterate #(.getPreviousSibling %))
+                         (iterate (fn [^Node n] (.getPreviousSibling n)))
                          (take-while boolean)
-                         (filter #(and % (= nt (.getNodeType %))))))
+                         (filter (fn [^Node n] (and n (= nt (.getNodeType n)))))))
         step (str (node-type->xpath-function nt) "()[" posn "]")]
     (walk-back node step)))
 
