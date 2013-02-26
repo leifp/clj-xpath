@@ -40,10 +40,10 @@ See: format"
          res    []]
     ;;(logf "node-list: idx:%s node-list=%s length=%s" idx node-list length)
     (if (>= idx length)
-      (reverse res)
+      res
       (recur length
              (inc idx)
-             (cons (.item node-list idx) res)))))
+             (conj res (.item node-list idx))))))
 
 (defn node-map->seq
   "Convert a org.w3c.dom.NamedNodeMap into a clojure sequence."
@@ -53,10 +53,10 @@ See: format"
          res    []]
     ;;(logf "node-list: idx:%s node-list=%s length=%s" idx node-list length)
     (if (>= idx length)
-      (reverse res)
+      res
       (recur length
              (inc idx)
-             (cons (.item node-map idx) res)))))
+             (conj res (.item node-map idx))))))
 
 (def ^:dynamic *validation* false)
 
@@ -173,7 +173,8 @@ See xml->doc, and xp:compile."
 (defmethod $x :default [xp-expression doc]
   (map node->map
        (node-list->seq
-        (.evaluate (xp:compile xp-expression) doc XPathConstants/NODESET))))
+        (.evaluate ^XPathExpression (xp:compile xp-expression)
+                   doc XPathConstants/NODESET))))
 
 (defn summarize
   "Summarize a string to a specific maximu length (truncating it and adding ... if it is longer than len)."

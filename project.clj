@@ -8,6 +8,8 @@
             :comments "Same as Clojure"}
   :local-repo-classpath true
   :dev-dependencies [[swank-clojure "1.4.3"]
-                     [midje "1.4.0"]]
+                     [midje "1.4.0"]
+                     [criterium "0.3.1"]
+                     [org.clojure/tools.nrepl "0.2.1"]]
   :dependencies [[org.clojure/clojure "1.5.0-alpha6"]
                  [xalan "2.7.1"]])
